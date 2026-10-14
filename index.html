@@ -411,6 +411,7 @@
     </div>
 </div>
 
+<!-- 상세/수정/취소 팝업 모달 HTML -->
 <div id="resModal" class="modal-overlay">
     <div class="modal-box">
         <h3>예약 확인 및 관리</h3>
@@ -427,6 +428,7 @@
     </div>
 </div>
 
+<!-- 운행 연장 전용 모달 -->
 <div id="extendModal" class="modal-overlay">
     <div class="modal-box">
         <h3>운행 시간 연장</h3>
@@ -451,13 +453,15 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
+    // --- 수정됨: 원래 정상 작동하던 기존 Firebase 설정으로 복구 ---
     const firebaseConfig = {
-        apiKey: "AIzaSyBMneQUm8X-2z6j1YP2CD88tWyr03hk_oQ",
-        authDomain: "meng-5e370.firebaseapp.com",
-        projectId: "meng-5e370",
-        storageBucket: "meng-5e370.firebasestorage.app",
-        messagingSenderId: "473670492005",
-        appId: "1:473670492005:web:31a7691b232567b1df8b8c"
+        apiKey: "AIzaSyBRwg3k5usuMkBXH9LB6T-9Uuw9ZU1TBMs",
+        authDomain: "formeng-7c4b3.firebaseapp.com",
+        databaseURL: "https://formeng-7c4b3-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "formeng-7c4b3",
+        storageBucket: "formeng-7c4b3.firebasestorage.app",
+        messagingSenderId: "745402830490",
+        appId: "1:745402830490:web:dcf71f104ffdc6bdb8d923"
     };
 
     const app = initializeApp(firebaseConfig);
@@ -484,9 +488,8 @@
     let editingId = null; 
     let previousStartTime = null; 
     
-    // --- 드래그 앤 드롭 관련 상태 변수 (수정됨) ---
     let isDragging = false;
-    let blockClick = false; // 드래그 직후 클릭되는 현상 방지용 플래그
+    let blockClick = false; 
     let dragType = null; 
     let dragResId = null;
     let originalResData = null;
@@ -524,8 +527,7 @@
         const min = String(now.getMinutes()).padStart(2, '0');
         return `${y}-${m}-${d}T${h}:${min}`;
     }
-    
-    // 밀리초를 YYYY-MM-DDTHH:MM 포맷으로 변경
+
     function msToIsoString(ms) {
         const d = new Date(ms);
         const yy = d.getFullYear();
@@ -535,7 +537,7 @@
         let mmin = String(d.getMinutes()).padStart(2, '0');
         return `${yy}-${mm}-${dd}T${hh}:${mmin}`;
     }
-    
+
     function formatDateTimeForDisplay(isoString) {
         const dDays = ['일', '월', '화', '수', '목', '금', '토'];
         const [dPart, tPart] = isoString.split('T');
@@ -783,12 +785,11 @@
     document.getElementById('prevMonthBtn').addEventListener('click', () => { currentCalDate.setMonth(currentCalDate.getMonth() - 1); renderCalendar(); });
     document.getElementById('nextMonthBtn').addEventListener('click', () => { currentCalDate.setMonth(currentCalDate.getMonth() + 1); renderCalendar(); });
     
-    // --- 드래그 핸들러 함수 ---
     function startDrag(e, type, res) {
         e.preventDefault(); 
         e.stopPropagation();
         isDragging = true;
-        blockClick = true; // 드래그 시작 시 클릭 차단 플래그 설정
+        blockClick = true; 
         dragType = type;
         dragResId = res.id;
         originalResData = res;
@@ -814,7 +815,6 @@
         
         let calculatedMs = dayStartMs + (mouseX * msPerPixel);
         
-        // 10분 단위 스냅
         const tenMinsMs = 10 * 60 * 1000;
         calculatedMs = Math.round(calculatedMs / tenMinsMs) * tenMinsMs;
 
@@ -826,7 +826,6 @@
             newEndMs = calculatedMs;
         }
 
-        // 툴팁 위치 및 텍스트
         tooltip.style.display = 'block';
         tooltip.style.left = (e.pageX + 15) + 'px';
         tooltip.style.top = (e.pageY - 20) + 'px';
@@ -835,7 +834,6 @@
         const displayEnd = formatDateTimeForDisplay(msToIsoString(newEndMs));
         tooltip.innerText = `${displayStart.split(' ')[1]} ~ ${displayEnd.split(' ')[1]}`;
 
-        // DOM 임시 업데이트
         const block = document.querySelector(`.timeline-block[data-id="${dragResId}"]`);
         if(block) {
             const leftPercent = ((newStartMs - dayStartMs) / (24 * 60 * 60 * 1000)) * 100;
@@ -848,13 +846,11 @@
     async function endDrag(e) {
         if (!isDragging) return;
         
-        // --- 수정됨: 드래그가 끝나면 즉시 isDragging을 false로 전환 ---
         isDragging = false; 
         document.removeEventListener('mousemove', onDrag);
         document.removeEventListener('mouseup', endDrag);
         tooltip.style.display = 'none';
 
-        // 마우스 업 직후의 클릭 이벤트가 실행되는 것을 방지하고 잠시 후 해제
         setTimeout(() => {
             blockClick = false;
         }, 100);
@@ -906,7 +902,6 @@
         dragResId = null;
         originalResData = null;
     }
-    // ----------------------------------------------------
 
     function renderTimeline() {
         const selectedDateStr = startDateInput.value; 
@@ -962,13 +957,11 @@
                     block.style.padding = '0 4px';
                 }
                 
-                // 블록 텍스트(이름) 요소를 span으로 분리하여 클릭 방해 방지
                 const nameSpan = document.createElement('span');
                 nameSpan.innerText = res.userName;
                 nameSpan.style.pointerEvents = 'none';
                 block.appendChild(nameSpan);
 
-                // 리사이즈 핸들 추가 (이벤트 버블링 차단)
                 if (resStart >= dayStart) {
                     const leftHandle = document.createElement('div');
                     leftHandle.className = 'resizer resizer-left';
@@ -1009,7 +1002,6 @@
 
                 block.title = `[클릭하여 공지 복사 및 상세 확인]\n예약자: ${res.userName}\n차량: ${res.vehicle}\n기간: ${displayTime}`;
 
-                // --- 수정됨: 플래그(blockClick) 검사하여 클릭 필터링 ---
                 block.addEventListener('click', (e) => {
                     if (isDragging || blockClick) return; 
                     if (e.target.classList.contains('resizer')) return; 
@@ -1058,7 +1050,6 @@
         });
     }
 
-    // --- 팝업창 버튼 이벤트들 ---
     document.getElementById('btnModalClose').addEventListener('click', () => {
         document.getElementById('resModal').style.display = 'none';
         selectedReservation = null;
