@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FORM ENG 법인차량 예약 시스템</title>
-    <!-- 추가됨: Excel 파일 생성을 위한 SheetJS 라이브러리 -->
+    <!-- Excel 파일 생성을 위한 SheetJS 라이브러리 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root {
@@ -25,6 +25,7 @@
             color: var(--text-color);
             margin: 0;
             padding: 20px;
+            user-select: none; /* 드래그 시 텍스트 선택 방지 */
         }
         .container {
             max-width: 950px;
@@ -122,9 +123,18 @@
             color: white; border-radius: 4px; font-weight: bold;
             display: flex; align-items: center; justify-content: center; overflow: hidden;
             text-overflow: ellipsis; white-space: nowrap; padding: 0 4px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.15); box-sizing: border-box; cursor: pointer; transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15); box-sizing: border-box; cursor: pointer; transition: background-color 0.2s;
         }
-        .timeline-block:hover { filter: brightness(1.2); transform: scaleY(1.1); z-index: 10; border: 1px solid #003d82; }
+        .timeline-block:hover { filter: brightness(1.1); z-index: 10; border: 1px solid #003d82; }
+
+        /* 드래그 핸들 (양 끝부분) */
+        .resizer {
+            position: absolute; top: 0; bottom: 0; width: 8px;
+            cursor: col-resize; z-index: 11;
+        }
+        .resizer-left { left: 0; }
+        .resizer-right { right: 0; }
+        .resizer:hover { background-color: rgba(255, 255, 255, 0.4); }
 
         /* 폼 요소 스타일 */
         .form-group { margin-bottom: 20px; }
@@ -133,7 +143,6 @@
             padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: inherit; font-size: 15px;
         }
         
-        /* 24시 형태 드롭다운 스타일 */
         .time-select {
             padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; font-size: 15px;
             background-color: #fff; flex: 1;
@@ -164,7 +173,7 @@
             margin-bottom: 15px; font-weight: bold; font-size: 14px; text-align: center; line-height: 1.5;
         }
         
-        /* 등록/수정/취소 버튼 */
+        /* 버튼 스타일 */
         .btn-wrapper { display: flex; gap: 10px; }
         button.submit-btn {
             width: 100%; padding: 15px; background-color: var(--primary-color);
@@ -222,6 +231,12 @@
         .btn-cancel:hover { background-color: #bd2130; }
         .btn-close { background-color: #6c757d; color: #fff; }
         .btn-close:hover { background-color: #5a6268; }
+
+        /* 드래그 툴팁 */
+        #dragTooltip {
+            position: absolute; display: none; background: rgba(0,0,0,0.8); color: #fff;
+            padding: 4px 8px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 10000;
+        }
     </style>
 </head>
 <body>
@@ -263,13 +278,13 @@
         <h2 id="timelineTitle">선택일자 24시간 예약 현황</h2>
         <p style="text-align: center; color: #666; font-size: 14px; margin-top: -10px; margin-bottom: 20px;">
             ※ 위 달력에서 날짜를 클릭하시면 해당 일자의 타임라인이 표시됩니다.<br>
-            ※ 예약 블록(이름)을 <b>클릭</b>하시면 <b>자동으로 공지가 복사</b>되며 상세/수정 창이 열립니다.
+            ※ 예약 블록(이름)을 <b>클릭</b>하시면 공지가 복사되며 창이 열리고, <b>양 끝을 드래그</b>하여 시간을 즉시 수정할 수 있습니다.
         </p>
         
         <div class="timeline-container">
             <div class="timeline-row axis-row">
                 <div class="vehicle-label-cell">차량 / 시간축</div>
-                <div class="timeline-track-cell axis-track">
+                <div class="timeline-track-cell axis-track" id="axisTrackRef">
                     <span>00</span><span>01</span><span>02</span><span>03</span><span>04</span><span>05</span>
                     <span>06</span><span>07</span><span>08</span><span>09</span><span>10</span><span>11</span>
                     <span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span>
@@ -396,12 +411,10 @@
     </div>
 </div>
 
-<!-- 상세/수정/취소 팝업 모달 HTML -->
 <div id="resModal" class="modal-overlay">
     <div class="modal-box">
         <h3>예약 확인 및 관리</h3>
-        <div id="modalContent" class="modal-content-text">
-            </div>
+        <div id="modalContent" class="modal-content-text"></div>
         <div class="modal-btn-group" style="margin-bottom: 10px;">
             <button type="button" id="btnModalEnd" class="modal-btn btn-end">운행 종료</button>
             <button type="button" id="btnModalExtend" class="modal-btn btn-extend">운행 연장</button>
@@ -414,7 +427,6 @@
     </div>
 </div>
 
-<!-- 운행 연장 전용 모달 -->
 <div id="extendModal" class="modal-overlay">
     <div class="modal-box">
         <h3>운행 시간 연장</h3>
@@ -432,18 +444,20 @@
     </div>
 </div>
 
+<!-- 드래그 시간 표시용 툴팁 -->
+<div id="dragTooltip"></div>
+
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
     const firebaseConfig = {
-        apiKey: "AIzaSyBRwg3k5usuMkBXH9LB6T-9Uuw9ZU1TBMs",
-        authDomain: "formeng-7c4b3.firebaseapp.com",
-        databaseURL: "https://formeng-7c4b3-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "formeng-7c4b3",
-        storageBucket: "formeng-7c4b3.firebasestorage.app",
-        messagingSenderId: "745402830490",
-        appId: "1:745402830490:web:dcf71f104ffdc6bdb8d923"
+        apiKey: "AIzaSyBMneQUm8X-2z6j1YP2CD88tWyr03hk_oQ",
+        authDomain: "meng-5e370.firebaseapp.com",
+        projectId: "meng-5e370",
+        storageBucket: "meng-5e370.firebasestorage.app",
+        messagingSenderId: "473670492005",
+        appId: "1:473670492005:web:31a7691b232567b1df8b8c"
     };
 
     const app = initializeApp(firebaseConfig);
@@ -469,6 +483,16 @@
     let selectedReservation = null;
     let editingId = null; 
     let previousStartTime = null; 
+    
+    // --- 드래그 앤 드롭 관련 상태 변수 (수정됨) ---
+    let isDragging = false;
+    let blockClick = false; // 드래그 직후 클릭되는 현상 방지용 플래그
+    let dragType = null; 
+    let dragResId = null;
+    let originalResData = null;
+    let newStartMs = null;
+    let newEndMs = null;
+    const tooltip = document.getElementById('dragTooltip');
 
     function populateTimeSelects() {
         let hHtml = "";
@@ -499,6 +523,26 @@
         const h = String(now.getHours()).padStart(2, '0');
         const min = String(now.getMinutes()).padStart(2, '0');
         return `${y}-${m}-${d}T${h}:${min}`;
+    }
+    
+    // 밀리초를 YYYY-MM-DDTHH:MM 포맷으로 변경
+    function msToIsoString(ms) {
+        const d = new Date(ms);
+        const yy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        let mmin = String(d.getMinutes()).padStart(2, '0');
+        return `${yy}-${mm}-${dd}T${hh}:${mmin}`;
+    }
+    
+    function formatDateTimeForDisplay(isoString) {
+        const dDays = ['일', '월', '화', '수', '목', '금', '토'];
+        const [dPart, tPart] = isoString.split('T');
+        const dObj = new Date(dPart);
+        const dayName = dDays[dObj.getDay()];
+        const [y, m, d] = dPart.split('-');
+        return `${y}/${m}/${d}(${dayName}) ${tPart}`;
     }
 
     function getCombinedStartString() {
@@ -554,7 +598,6 @@
 
     function handleStartTimeChange() {
         hideError();
-        
         const currentStartStr = getCombinedStartString();
         const currentEndStr = getCombinedEndString();
         
@@ -740,6 +783,131 @@
     document.getElementById('prevMonthBtn').addEventListener('click', () => { currentCalDate.setMonth(currentCalDate.getMonth() - 1); renderCalendar(); });
     document.getElementById('nextMonthBtn').addEventListener('click', () => { currentCalDate.setMonth(currentCalDate.getMonth() + 1); renderCalendar(); });
     
+    // --- 드래그 핸들러 함수 ---
+    function startDrag(e, type, res) {
+        e.preventDefault(); 
+        e.stopPropagation();
+        isDragging = true;
+        blockClick = true; // 드래그 시작 시 클릭 차단 플래그 설정
+        dragType = type;
+        dragResId = res.id;
+        originalResData = res;
+        newStartMs = new Date(res.startTime).getTime();
+        newEndMs = new Date(res.endTime).getTime();
+        
+        document.addEventListener('mousemove', onDrag);
+        document.addEventListener('mouseup', endDrag);
+    }
+
+    function onDrag(e) {
+        if (!isDragging) return;
+        
+        const trackEl = document.getElementById('axisTrackRef');
+        const rect = trackEl.getBoundingClientRect();
+        
+        let mouseX = e.clientX - rect.left;
+        if(mouseX < 0) mouseX = 0;
+        if(mouseX > rect.width) mouseX = rect.width;
+
+        const dayStartMs = new Date(`${startDateInput.value}T00:00:00`).getTime();
+        const msPerPixel = (24 * 60 * 60 * 1000) / rect.width;
+        
+        let calculatedMs = dayStartMs + (mouseX * msPerPixel);
+        
+        // 10분 단위 스냅
+        const tenMinsMs = 10 * 60 * 1000;
+        calculatedMs = Math.round(calculatedMs / tenMinsMs) * tenMinsMs;
+
+        if (dragType === 'left') {
+            if (calculatedMs >= newEndMs) calculatedMs = newEndMs - tenMinsMs;
+            newStartMs = calculatedMs;
+        } else if (dragType === 'right') {
+            if (calculatedMs <= newStartMs) calculatedMs = newStartMs + tenMinsMs;
+            newEndMs = calculatedMs;
+        }
+
+        // 툴팁 위치 및 텍스트
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.pageX + 15) + 'px';
+        tooltip.style.top = (e.pageY - 20) + 'px';
+        
+        const displayStart = formatDateTimeForDisplay(msToIsoString(newStartMs));
+        const displayEnd = formatDateTimeForDisplay(msToIsoString(newEndMs));
+        tooltip.innerText = `${displayStart.split(' ')[1]} ~ ${displayEnd.split(' ')[1]}`;
+
+        // DOM 임시 업데이트
+        const block = document.querySelector(`.timeline-block[data-id="${dragResId}"]`);
+        if(block) {
+            const leftPercent = ((newStartMs - dayStartMs) / (24 * 60 * 60 * 1000)) * 100;
+            const widthPercent = ((newEndMs - newStartMs) / (24 * 60 * 60 * 1000)) * 100;
+            block.style.left = `${leftPercent}%`;
+            block.style.width = `${widthPercent}%`;
+        }
+    }
+
+    async function endDrag(e) {
+        if (!isDragging) return;
+        
+        // --- 수정됨: 드래그가 끝나면 즉시 isDragging을 false로 전환 ---
+        isDragging = false; 
+        document.removeEventListener('mousemove', onDrag);
+        document.removeEventListener('mouseup', endDrag);
+        tooltip.style.display = 'none';
+
+        // 마우스 업 직후의 클릭 이벤트가 실행되는 것을 방지하고 잠시 후 해제
+        setTimeout(() => {
+            blockClick = false;
+        }, 100);
+
+        if (newStartMs !== new Date(originalResData.startTime).getTime() || 
+            newEndMs !== new Date(originalResData.endTime).getTime()) {
+            
+            const newStartStr = msToIsoString(newStartMs);
+            const newEndStr = msToIsoString(newEndMs);
+
+            let isOverlapping = false;
+            for (let i = 0; i < allReservations.length; i++) {
+                const res = allReservations[i];
+                if (res.id === dragResId) continue;
+                if (res.vehicle === originalResData.vehicle) {
+                    const rStart = new Date(res.startTime).getTime();
+                    const rEnd = new Date(res.endTime).getTime();
+                    if (newStartMs < rEnd && newEndMs > rStart) {
+                        isOverlapping = true;
+                        break;
+                    }
+                }
+            }
+
+            if (isOverlapping) {
+                alert("해당 시간대에 이미 다른 예약이 존재합니다. 변경이 취소됩니다.");
+                renderTimeline(); 
+            } else {
+                const inputPw = prompt(`[${originalResData.userName}]님의 예약 시간을 변경합니다.\n비밀번호 4자리(또는 마스터)를 입력해주세요.`);
+                if (inputPw === originalResData.password || inputPw === "140916") {
+                    try {
+                        await updateDoc(doc(db, "reservations", dragResId), {
+                            startTime: newStartStr,
+                            endTime: newEndStr
+                        });
+                        alert("예약 시간이 성공적으로 변경되었습니다.");
+                    } catch (error) {
+                        alert("시간 변경 중 오류가 발생했습니다.");
+                        renderTimeline();
+                    }
+                } else {
+                    if (inputPw !== null) alert("비밀번호가 일치하지 않아 변경이 취소되었습니다.");
+                    renderTimeline(); 
+                }
+            }
+        }
+        
+        dragType = null;
+        dragResId = null;
+        originalResData = null;
+    }
+    // ----------------------------------------------------
+
     function renderTimeline() {
         const selectedDateStr = startDateInput.value; 
         if (!selectedDateStr) return;
@@ -776,25 +944,51 @@
                 block.className = 'timeline-block';
                 block.style.left = `${leftPercent}%`;
                 block.style.width = `${widthPercent}%`;
-                block.innerText = res.userName; 
+                block.setAttribute('data-id', res.id); 
                 
-                // --- 수정됨: 블록 폭에 따라 폰트 사이즈 및 자간 동적 축소 로직 ---
-                if (widthPercent < 2.5) { // 약 30분 이하
+                if (widthPercent < 2.5) { 
                     block.style.fontSize = '8px';
                     block.style.letterSpacing = '-1px';
                     block.style.padding = '0';
-                } else if (widthPercent < 4.5) { // 약 1시간 이하
+                } else if (widthPercent < 4.5) { 
                     block.style.fontSize = '10px';
                     block.style.letterSpacing = '-0.5px';
                     block.style.padding = '0 1px';
-                } else if (widthPercent < 6) { // 약 1시간 30분 이하
+                } else if (widthPercent < 6) { 
                     block.style.fontSize = '11px';
                     block.style.padding = '0 2px';
                 } else {
-                    block.style.fontSize = '12px'; // 기본 크기 유지
+                    block.style.fontSize = '12px'; 
                     block.style.padding = '0 4px';
                 }
                 
+                // 블록 텍스트(이름) 요소를 span으로 분리하여 클릭 방해 방지
+                const nameSpan = document.createElement('span');
+                nameSpan.innerText = res.userName;
+                nameSpan.style.pointerEvents = 'none';
+                block.appendChild(nameSpan);
+
+                // 리사이즈 핸들 추가 (이벤트 버블링 차단)
+                if (resStart >= dayStart) {
+                    const leftHandle = document.createElement('div');
+                    leftHandle.className = 'resizer resizer-left';
+                    leftHandle.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        startDrag(e, 'left', res);
+                    });
+                    block.appendChild(leftHandle);
+                }
+                
+                if (resEnd <= dayEnd) {
+                    const rightHandle = document.createElement('div');
+                    rightHandle.className = 'resizer resizer-right';
+                    rightHandle.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        startDrag(e, 'right', res);
+                    });
+                    block.appendChild(rightHandle);
+                }
+
                 const [startD, startT] = res.startTime.split('T');
                 const [endD, endT] = res.endTime.split('T');
                 let displayTime = "";
@@ -815,7 +1009,11 @@
 
                 block.title = `[클릭하여 공지 복사 및 상세 확인]\n예약자: ${res.userName}\n차량: ${res.vehicle}\n기간: ${displayTime}`;
 
-                block.addEventListener('click', () => {
+                // --- 수정됨: 플래그(blockClick) 검사하여 클릭 필터링 ---
+                block.addEventListener('click', (e) => {
+                    if (isDragging || blockClick) return; 
+                    if (e.target.classList.contains('resizer')) return; 
+
                     selectedReservation = res;
                     
                     const copyText = `[차량 예약 공지]\n차량번호: ${res.vehicle}\n사용자: ${res.userName}\n사용일시: ${displayTime}\n목적지: ${res.destination}`;
@@ -860,6 +1058,7 @@
         });
     }
 
+    // --- 팝업창 버튼 이벤트들 ---
     document.getElementById('btnModalClose').addEventListener('click', () => {
         document.getElementById('resModal').style.display = 'none';
         selectedReservation = null;
